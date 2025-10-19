@@ -9,6 +9,8 @@ from app.db.session import init_db
 from app.api.v1 import auth, accounts, transfers, rates, audit
 from app.utils.message_broker import message_broker
 from app.utils.telegram_logger import telegram_logger
+from app.utils.redis_client import redis_client
+from app.utils.rate_limiter import rate_limit_check
 import time
 
 
@@ -20,6 +22,8 @@ async def lifespan(app: FastAPI):
         await init_db()
 
         await message_broker.connect()
+
+        await redis_client.connect()
 
         await telegram_logger.log_success(f"{settings.app_name} started successfully")
 
@@ -33,6 +37,7 @@ async def lifespan(app: FastAPI):
 
     try:
         await message_broker.close()
+        await redis_client.disconnect()
         await telegram_logger.log_info(f"{settings.app_name} shut down successfully")
     except Exception as e:
         await telegram_logger.log_error(f"Error during shutdown: {str(e)}")
@@ -62,6 +67,14 @@ async def add_process_time_header(request: Request, call_next):
     response = await call_next(request)
     process_time = time.time() - start_time
     response.headers["X-Process-Time"] = str(process_time)
+    return response
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if request.url.path not in ["/health", "/docs", "/redoc", "/openapi.json"]:
+        await rate_limit_check(request)
+    response = await call_next(request)
     return response
 
 

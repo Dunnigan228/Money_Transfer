@@ -6,12 +6,14 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.models.fx_rate import FxRate
+from app.utils.redis_client import redis_client
 
 
 class FxRateService:
 
     def __init__(self):
         self.api_url = settings.frankfurter_api_url
+        self.cache_ttl = settings.redis_cache_ttl
 
     async def fetch_latest_rates(
         self,
@@ -20,8 +22,8 @@ class FxRateService:
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(
-                    f"{self.api_url}/latest",
-                    params={"from": base_currency},
+                    f"{self.api_url}/v1/latest",
+                    params={"base": base_currency},
                     timeout=10.0
                 )
                 response.raise_for_status()
@@ -44,6 +46,11 @@ class FxRateService:
         if base_currency == quote_currency:
             return Decimal("1.0")
 
+        cache_key = f"fx_rate:{base_currency}:{quote_currency}"
+        cached_rate = await redis_client.get(cache_key)
+        if cached_rate:
+            return Decimal(cached_rate)
+
         stmt = (
             select(FxRate)
             .where(
@@ -60,6 +67,7 @@ class FxRateService:
         fx_rate = result.scalar_one_or_none()
 
         if fx_rate:
+            await redis_client.set(cache_key, str(fx_rate.rate), self.cache_ttl)
             return fx_rate.rate
 
         stmt = (
@@ -78,7 +86,9 @@ class FxRateService:
         fx_rate = result.scalar_one_or_none()
 
         if fx_rate and fx_rate.rate != 0:
-            return Decimal("1.0") / fx_rate.rate
+            inverted_rate = Decimal("1.0") / fx_rate.rate
+            await redis_client.set(cache_key, str(inverted_rate), self.cache_ttl)
+            return inverted_rate
 
         return None
 
@@ -131,6 +141,11 @@ class FxRateService:
         return converted_amount, rate
 
     async def get_all_supported_currencies(self, db: AsyncSession) -> list[str]:
+        cache_key = "fx_currencies:all"
+        cached_currencies = await redis_client.get_json(cache_key)
+        if cached_currencies:
+            return cached_currencies
+
         stmt = select(FxRate.quote_currency).distinct()
         result = await db.execute(stmt)
         currencies = [row[0] for row in result.fetchall()]
@@ -139,5 +154,6 @@ class FxRateService:
         result = await db.execute(stmt)
         base_currencies = [row[0] for row in result.fetchall()]
 
-        all_currencies = set(currencies + base_currencies)
-        return sorted(list(all_currencies))
+        all_currencies = sorted(list(set(currencies + base_currencies)))
+        await redis_client.set_json(cache_key, all_currencies, self.cache_ttl)
+        return all_currencies

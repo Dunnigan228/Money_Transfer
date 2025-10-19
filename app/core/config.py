@@ -18,6 +18,10 @@ class Settings(BaseSettings):
         alias="DATABASE_URL"
     )
     db_echo: bool = Field(default=False, alias="DB_ECHO")
+    db_pool_size: int = Field(default=20, alias="DB_POOL_SIZE")
+    db_max_overflow: int = Field(default=40, alias="DB_MAX_OVERFLOW")
+    db_pool_timeout: int = Field(default=30, alias="DB_POOL_TIMEOUT")
+    db_pool_recycle: int = Field(default=3600, alias="DB_POOL_RECYCLE")
 
     jwt_secret_key: str = Field(alias="JWT_SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
@@ -47,9 +51,10 @@ class Settings(BaseSettings):
         default="redis://localhost:6379/0",
         alias="REDIS_URL"
     )
+    redis_cache_ttl: int = Field(default=3600, alias="REDIS_CACHE_TTL")
 
     frankfurter_api_url: str = Field(
-        default="https://api.frankfurter.app",
+        default="https://api.frankfurter.dev",
         alias="FRANKFURTER_API_URL"
     )
     fx_update_interval_seconds: int = Field(

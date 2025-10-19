@@ -1,8 +1,12 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 from sqlalchemy import String, DateTime, Numeric, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.db.models.user import User
 
 
 class Account(Base):
